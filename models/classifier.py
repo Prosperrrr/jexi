@@ -28,6 +28,7 @@ class AudioClassifier:
             if audio_path.lower().endswith('.m4a'):
                 audio = AudioSegment.from_file(audio_path, format='m4a')
                 temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+                temp_wav.close()  # Close the file handle before export
                 audio.export(temp_wav.name, format='wav')
                 audio_path_to_load = temp_wav.name
                 cleanup_temp = True
@@ -40,7 +41,16 @@ class AudioClassifier:
             
             # Clean up temp file if created
             if cleanup_temp:
-                os.unlink(temp_wav.name)
+                try:
+                    os.unlink(temp_wav.name)
+                except PermissionError:
+                    # If still locked, try again after a brief moment
+                    import time
+                    time.sleep(0.1)
+                    try:
+                        os.unlink(temp_wav.name)
+                    except:
+                        pass  # If still can't delete, OS will clean it up later
             
             # Extract features
             features = self._extract_features(y, sr)
@@ -50,7 +60,11 @@ class AudioClassifier:
             print(f"File: {audio_path}")
             print(f"Features extracted:")
             for key, value in features.items():
-                print(f"  {key}: {value:.4f}")
+                # Fix: Handle both scalar and array values
+                if isinstance(value, (np.ndarray, list)):
+                    print(f"  {key}: {value}")
+                else:
+                    print(f"  {key}: {value:.4f}")
             
             # Classify based on features
             classification = self._make_decision(features)
@@ -90,7 +104,7 @@ class AudioClassifier:
         
         # 5. Tempo and Beat Strength (rhythm detection)
         tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
-        features['tempo'] = tempo
+        features['tempo'] = float(tempo) if isinstance(tempo, np.ndarray) else tempo
         features['beat_strength'] = len(beats) / (len(y) / sr)  # Beats per second
         
         # 6. Spectral Bandwidth (frequency range)
@@ -108,63 +122,79 @@ class AudioClassifier:
         Decision logic based on extracted features
         
         Music typically has:
-        - Higher spectral centroid variance (more varied frequencies)
-        - Stronger beat patterns
-        - More consistent rhythm
-        - Wider spectral bandwidth
+        - Very strong, regular beat patterns (beat_strength > 1.5)
+        - Higher spectral rolloff (fuller frequency spectrum)
+        - Lower ZCR (smoother, more tonal)
+        - More consistent energy (less silence/pauses)
         
         Speech typically has:
-        - Higher zero crossing rate (more transitions)
-        - Lower spectral centroid
-        - Weaker/irregular beats
-        - More energy variation (pauses between words)
+        - Higher zero crossing rate (more abrupt transitions)
+        - Lower spectral rolloff (concentrated in speech frequencies)
+        - Irregular or weak beats
+        - More energy variation (pauses between words/sentences)
+        - Lower spectral centroid (less "bright")
         """
         
         music_score = 0
         speech_score = 0
         
-        # Beat strength analysis (MOST IMPORTANT - weighted heavily)
-        if features['beat_strength'] > 1.2:  # Lowered threshold for music
-            music_score += 3  # Increased weight
-        elif features['beat_strength'] < 0.6:  # Stricter threshold for speech
+        # Zero Crossing Rate - STRONG speech indicator
+        # Speech has more abrupt transitions between sounds
+        if features['zcr_mean'] > 0.15:  # High ZCR = likely speech
             speech_score += 3
-        else:
-            music_score += 1  # Slight lean toward music for middle ground
-        
-        # Tempo analysis (strong indicator)
-        if 80 <= features['tempo'] <= 200:  # Wider music tempo range
+        elif features['zcr_mean'] < 0.08:  # Low ZCR = likely music (smoother)
             music_score += 2
-        elif features['tempo'] < 60 or features['tempo'] > 220:
+        
+        # Beat strength analysis - Music has VERY strong, regular beats
+        if features['beat_strength'] > 1.5:  # Strong regular beats = music
+            music_score += 3
+        elif features['beat_strength'] < 0.8:  # Weak/irregular = speech
+            speech_score += 2
+        else:
+            # Middle ground - use other features
+            pass
+        
+        # Spectral Rolloff - Music uses fuller frequency spectrum
+        if features['spectral_rolloff_mean'] > 5000:  # High rolloff = music
+            music_score += 2
+        elif features['spectral_rolloff_mean'] < 3500:  # Low rolloff = speech
             speech_score += 2
         
-        # Spectral centroid variance (music has more varied frequencies)
-        if features['spectral_centroid_std'] > 600:  # Lowered threshold
+        # Spectral Centroid - Speech typically has lower centroid
+        if features['spectral_centroid_mean'] < 2000:  # Lower = speech
+            speech_score += 2
+        elif features['spectral_centroid_mean'] > 3000:  # Higher = music
             music_score += 2
-        else:
+        
+        # Spectral Centroid Variance - But high variance can mean speech too!
+        # Speech can be very dynamic (shouting, whispering, etc.)
+        if features['spectral_centroid_std'] > 1200:  # Very high variance
+            # Could be either - check with other features
+            if features['zcr_mean'] > 0.15:  # If also high ZCR, likely speech
+                speech_score += 1
+            else:
+                music_score += 1
+        
+        # Spectral Bandwidth
+        if features['spectral_bandwidth_mean'] > 1800:
+            music_score += 1
+        elif features['spectral_bandwidth_mean'] < 1400:
             speech_score += 1
         
-        # Zero crossing rate (speech has more transitions)
-        if features['zcr_mean'] > 0.12:  # Raised threshold to be more selective
+        # RMS Energy variation - Speech has more pauses (higher variation)
+        if features['rms_std'] < 0.04:  # Low variation = consistent = music
+            music_score += 2
+        elif features['rms_std'] > 0.06:  # High variation = pauses = speech
             speech_score += 1
-        else:
+        
+        # MFCC Std - Extremely high values can indicate speech dynamics
+        if features['mfcc_std'] > 100:  # Very high = likely speech
+            speech_score += 2
+        elif features['mfcc_std'] > 40:  # High = likely music
             music_score += 1
         
-        # Spectral bandwidth (music uses wider frequency range)
-        if features['spectral_bandwidth_mean'] > 1200:  # Lowered threshold
-            music_score += 2
-        else:
-            speech_score += 1
-        
-        # RMS energy variation (speech has more pauses)
-        if features['rms_std'] > 0.08:  # Raised threshold
-            speech_score += 1
-        else:
-            music_score += 1
-        
-        # MFCC analysis (timbre complexity - music is more complex)
-        if features['mfcc_std'] > 15:
-            music_score += 2
-        else:
+        # Tempo check - Very extreme tempos unlikely for music
+        if features['tempo'] < 60 or features['tempo'] > 200:
             speech_score += 1
         
         # Final decision
