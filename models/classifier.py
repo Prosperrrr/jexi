@@ -167,7 +167,7 @@ class AudioClassifier:
         elif features['spectral_centroid_mean'] > 3000:  # Higher = music
             music_score += 2
         
-        # Spectral Centroid Variance - But high variance can mean speech too!
+        # Spectral Centroid Variance, But high variance can mean speech too!
         # Speech can be very dynamic (shouting, whispering, etc.)
         if features['spectral_centroid_std'] > 1200:  # Very high variance
             # Could be either - check with other features
