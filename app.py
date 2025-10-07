@@ -2,13 +2,17 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
+from models.classifier import AudioClassifier
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
+# Initialize classifier
+classifier = AudioClassifier()
+
 # Configuration
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a'}
 
 # Create uploads folder if it doesn't exist
@@ -51,14 +55,31 @@ def upload_audio():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        # TODO: Implement content classification (Music vs Speech)
-        # TODO: Route to appropriate pipeline (Spleeter or Whisper+RNNoise)
-        
-        return jsonify({
-            "message": "File uploaded successfully",
-            "filename": filename,
-            "status": "processing"
-        }), 200
+        # Classify audio content
+        try:
+            content_type = classifier.classify(filepath)
+            
+            # Check if classification failed
+            if content_type is None:
+                return jsonify({
+                    "error": "Failed to classify audio - unsupported format or corrupted file",
+                    "filename": filename,
+                    "suggestion": "Try converting to MP3 or WAV format"
+                }), 500
+            
+            return jsonify({
+                "message": "File uploaded and classified successfully",
+                "filename": filename,
+                "content_type": content_type,
+                "status": "ready_for_processing",
+                "next_step": f"/api/process/{content_type}"
+            }), 200
+            
+        except Exception as e:
+            return jsonify({
+                "error": f"Classification failed: {str(e)}",
+                "filename": filename
+            }), 500
     
     return jsonify({"error": "Invalid file type"}), 400
 

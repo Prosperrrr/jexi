@@ -1,0 +1,189 @@
+import librosa
+import numpy as np
+from pydub import AudioSegment
+import os
+import tempfile
+
+class AudioClassifier:
+    """
+    Classifies audio content as either 'music' or 'speech'
+    Uses spectral features and rhythm analysis
+    """
+    
+    def __init__(self):
+        self.sample_rate = 22050  # Standard sample rate for analysis
+    
+    def classify(self, audio_path):
+        """
+        Classify audio file as 'music' or 'speech'
+        
+        Args:
+            audio_path (str): Path to audio file
+            
+        Returns:
+            str: 'music' or 'speech'
+        """
+        try:
+            # Convert M4A/other formats to WAV for librosa compatibility
+            if audio_path.lower().endswith('.m4a'):
+                audio = AudioSegment.from_file(audio_path, format='m4a')
+                temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+                audio.export(temp_wav.name, format='wav')
+                audio_path_to_load = temp_wav.name
+                cleanup_temp = True
+            else:
+                audio_path_to_load = audio_path
+                cleanup_temp = False
+            
+            # Load audio file
+            y, sr = librosa.load(audio_path_to_load, sr=self.sample_rate, duration=30)  # Analyze first 30 seconds
+            
+            # Clean up temp file if created
+            if cleanup_temp:
+                os.unlink(temp_wav.name)
+            
+            # Extract features
+            features = self._extract_features(y, sr)
+            
+            # DEBUG: Print features to see what's happening
+            print("\n=== AUDIO CLASSIFICATION DEBUG ===")
+            print(f"File: {audio_path}")
+            print(f"Features extracted:")
+            for key, value in features.items():
+                print(f"  {key}: {value:.4f}")
+            
+            # Classify based on features
+            classification = self._make_decision(features)
+            print(f"Classification: {classification}")
+            print("===================================\n")
+            
+            return classification
+            
+        except Exception as e:
+            print(f"Error classifying audio: {e}")
+            import traceback
+            traceback.print_exc()
+            return None  # Return None instead of defaulting to speech
+    
+    def _extract_features(self, y, sr):
+        """Extract audio features for classification"""
+        features = {}
+        
+        # 1. Spectral Centroid (brightness of sound)
+        spectral_centroids = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+        features['spectral_centroid_mean'] = np.mean(spectral_centroids)
+        features['spectral_centroid_std'] = np.std(spectral_centroids)
+        
+        # 2. Zero Crossing Rate (noisiness)
+        zcr = librosa.feature.zero_crossing_rate(y)[0]
+        features['zcr_mean'] = np.mean(zcr)
+        features['zcr_std'] = np.std(zcr)
+        
+        # 3. Spectral Rolloff (frequency distribution)
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+        features['spectral_rolloff_mean'] = np.mean(spectral_rolloff)
+        
+        # 4. MFCCs (timbre characteristics)
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        features['mfcc_mean'] = np.mean(mfccs)
+        features['mfcc_std'] = np.std(mfccs)
+        
+        # 5. Tempo and Beat Strength (rhythm detection)
+        tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+        features['tempo'] = tempo
+        features['beat_strength'] = len(beats) / (len(y) / sr)  # Beats per second
+        
+        # 6. Spectral Bandwidth (frequency range)
+        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
+        features['spectral_bandwidth_mean'] = np.mean(spectral_bandwidth)
+        
+        # 7. RMS Energy (loudness variation)
+        rms = librosa.feature.rms(y=y)[0]
+        features['rms_std'] = np.std(rms)
+        
+        return features
+    
+    def _make_decision(self, features):
+        """
+        Decision logic based on extracted features
+        
+        Music typically has:
+        - Higher spectral centroid variance (more varied frequencies)
+        - Stronger beat patterns
+        - More consistent rhythm
+        - Wider spectral bandwidth
+        
+        Speech typically has:
+        - Higher zero crossing rate (more transitions)
+        - Lower spectral centroid
+        - Weaker/irregular beats
+        - More energy variation (pauses between words)
+        """
+        
+        music_score = 0
+        speech_score = 0
+        
+        # Beat strength analysis (MOST IMPORTANT - weighted heavily)
+        if features['beat_strength'] > 1.2:  # Lowered threshold for music
+            music_score += 3  # Increased weight
+        elif features['beat_strength'] < 0.6:  # Stricter threshold for speech
+            speech_score += 3
+        else:
+            music_score += 1  # Slight lean toward music for middle ground
+        
+        # Tempo analysis (strong indicator)
+        if 80 <= features['tempo'] <= 200:  # Wider music tempo range
+            music_score += 2
+        elif features['tempo'] < 60 or features['tempo'] > 220:
+            speech_score += 2
+        
+        # Spectral centroid variance (music has more varied frequencies)
+        if features['spectral_centroid_std'] > 600:  # Lowered threshold
+            music_score += 2
+        else:
+            speech_score += 1
+        
+        # Zero crossing rate (speech has more transitions)
+        if features['zcr_mean'] > 0.12:  # Raised threshold to be more selective
+            speech_score += 1
+        else:
+            music_score += 1
+        
+        # Spectral bandwidth (music uses wider frequency range)
+        if features['spectral_bandwidth_mean'] > 1200:  # Lowered threshold
+            music_score += 2
+        else:
+            speech_score += 1
+        
+        # RMS energy variation (speech has more pauses)
+        if features['rms_std'] > 0.08:  # Raised threshold
+            speech_score += 1
+        else:
+            music_score += 1
+        
+        # MFCC analysis (timbre complexity - music is more complex)
+        if features['mfcc_std'] > 15:
+            music_score += 2
+        else:
+            speech_score += 1
+        
+        # Final decision
+        print(f"  Music score: {music_score}")
+        print(f"  Speech score: {speech_score}")
+        
+        if music_score > speech_score:
+            return "music"
+        else:
+            return "speech"
+    
+    def get_confidence(self, audio_path):
+        """
+        Get classification with confidence score
+        
+        Returns:
+            tuple: (classification, confidence_percentage)
+        """
+        classification = self.classify(audio_path)
+        # TODO: Implement proper confidence scoring
+        # For now, return a basic confidence
+        return classification, 75.0  # Placeholder confidence
