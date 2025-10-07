@@ -73,9 +73,9 @@ def process_music():
 @app.route('/api/process/speech', methods=['POST'])
 def process_speech():
     """
-    Process speech file with Deepfilternet + Whisper
+    Process speech file with noisereduce + Whisper
     """
-    # TODO: Implement Deepfilternet noise reduction
+    # TODO: Implement noisereduce noise reduction
     # TODO: Implement Whisper transcription
     return jsonify({"message": "Speech processing endpoint - Coming soon"}), 200
 
@@ -83,10 +83,10 @@ def process_speech():
 @app.route('/api/realtime/noise-reduction', methods=['POST'])
 def realtime_noise_reduction():
     """
-    Real-time noise reduction using Deepfilternet
+    Real-time noise reduction using noisereduce
     WebSocket or streaming endpoint for live audio
     """
-    # TODO: Implement WebSocket for live Deepfilternet processing
+    # TODO: Implement WebSocket for live noisereduce processing
     return jsonify({"message": "Real-time noise reduction - Coming soon"}), 200
 
 @app.route('/api/realtime/transcription', methods=['POST'])
