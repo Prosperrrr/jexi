@@ -8,6 +8,7 @@ class AudioClassifier:
     """
     Classifies audio content as either 'music' or 'speech'
     Uses spectral features and rhythm analysis
+    A heuristic-based rough set features optimization algorithm for compressed audio
     """
     
     def __init__(self):
