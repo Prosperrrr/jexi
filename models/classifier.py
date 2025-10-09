@@ -10,6 +10,7 @@ class AudioClassifier:
     """
     This model classifies audio content as either 'music' or 'speech'
     Uses spectral features and rhythm analysis from three points in the audio.
+    uses librosa python library
     """
     
     def __init__(self):
