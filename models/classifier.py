@@ -8,7 +8,7 @@ import time
 
 class AudioClassifier:
     """
-    Classifies audio content as either 'music' or 'speech'
+    This model classifies audio content as either 'music' or 'speech'
     Uses spectral features and rhythm analysis from three points in the audio.
     """
     
@@ -87,7 +87,7 @@ class AudioClassifier:
             final_decision = vote_count.most_common(1)[0][0]
             
             print(f"Final Votes: {dict(vote_count)}")
-            print(f"🎯 Final Classification: {final_decision.upper()}")
+            print(f" Final Classification: {final_decision.upper()}")
             print("===================================\n")
             
             # Cleanup temp file
@@ -99,7 +99,7 @@ class AudioClassifier:
                     try:
                         os.unlink(temp_wav.name)
                     except:
-                        pass  # OS will clean up later
+                        pass  # OS will clean this later
                 
             return final_decision
             
