@@ -17,7 +17,7 @@ class MusicProcessor:
     """
     
     def __init__(self):
-        print("Loading Demucs model ...")
+        print("Loading Demucs model (this may take a minute)...")
         self.demucs_model = get_model('htdemucs_6s')  # 6 stems model
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.demucs_model.to(self.device)
@@ -146,20 +146,44 @@ class MusicProcessor:
         Transcribe lyrics from vocals stem using Whisper
         
         Returns:
-            str: Transcribed lyrics
+            dict: Transcribed lyrics with timestamps
         """
         try:
-            result = self.whisper_model.transcribe(vocals_path)
-            lyrics = result['text'].strip()
+            # Get full transcription with word-level timestamps
+            result = self.whisper_model.transcribe(
+                vocals_path,
+                word_timestamps=True  # Enable word-level timestamps
+            )
             
-            if not lyrics:
-                return "No lyrics detected (instrumental or unclear vocals)"
+            # Extract segments with timestamps
+            lyrics_with_time = []
+            for segment in result.get('segments', []):
+                lyrics_with_time.append({
+                    "start": segment['start'],  # Start time in seconds
+                    "end": segment['end'],      # End time in seconds
+                    "text": segment['text'].strip()
+                })
             
-            return lyrics
+            # Also keep plain text version
+            plain_lyrics = result['text'].strip()
+            
+            if not plain_lyrics:
+                return {
+                    "plain": "No lyrics detected (instrumental or unclear vocals)",
+                    "timestamped": []
+                }
+            
+            return {
+                "plain": plain_lyrics,
+                "timestamped": lyrics_with_time
+            }
             
         except Exception as e:
             print(f"  Warning: Could not transcribe lyrics: {e}")
-            return "Transcription failed"
+            return {
+                "plain": "Transcription failed",
+                "timestamped": []
+            }
     
     def analyze_audio(self, audio_path):
         """
