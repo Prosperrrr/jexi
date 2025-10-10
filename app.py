@@ -1,22 +1,30 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
+import threading
+import uuid
 from models.classifier import AudioClassifier
+from models.music_processor import MusicProcessor
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
-# Initialize classifier
+# Initialize models
 classifier = AudioClassifier()
+music_processor = MusicProcessor()
 
 # Configuration
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a'}
 
-# Create uploads folder if it doesn't exist
+# Create folders
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs('processed', exist_ok=True)
+
+# Store for tracking background jobs
+processing_jobs = {}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
