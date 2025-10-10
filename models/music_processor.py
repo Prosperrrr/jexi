@@ -17,7 +17,7 @@ class MusicProcessor:
     """
     
     def __init__(self):
-        print("Loading Demucs model (this may take a minute)...")
+        print("Loading Demucs model ...")
         self.demucs_model = get_model('htdemucs_6s')  # 6 stems model
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.demucs_model.to(self.device)
@@ -77,7 +77,12 @@ class MusicProcessor:
                 "duration": analysis['duration'],
                 "sample_rate": analysis['sample_rate'],
                 "lyrics": lyrics,
-                "stems": stem_paths,
+                "stems": {
+                    name: {
+                        "path": info["path"],
+                        "active": info["active"]
+                    } for name, info in stem_paths.items()
+                },
                 "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
@@ -111,7 +116,7 @@ class MusicProcessor:
         Separate audio into 6 stems using Demucs
         
         Returns:
-            dict: Paths to each stem file
+            dict: Paths to each stem file with activity status
         """
         # Load audio
         wav, sr = torchaudio.load(audio_path)
@@ -124,22 +129,51 @@ class MusicProcessor:
         wav = wav.to(self.device)
         
         # Apply Demucs model
-        print("  Running Demucs separation (this takes 3-5 minutes)...")
+        print("  Running Demucs separation ...")
         with torch.no_grad():
             sources = apply_model(self.demucs_model, wav[None], device=self.device)[0]
         
-        # Save each stem
+        # Save each stem and check if it's active
         stem_names = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano']
         stem_paths = {}
         
         for i, name in enumerate(stem_names):
             stem_path = os.path.join(output_dir, f"{name}.wav")
-            # Save audio (Demucs outputs shape: [sources, channels, samples])
+            
+            # Save audio
             save_audio(sources[i], stem_path, self.demucs_model.samplerate)
-            stem_paths[name] = stem_path
-            print(f"  ✓ Saved {name}.wav")
+            
+            # Check if stem is active (has actual content vs silence)
+            is_active = self._check_stem_activity(sources[i])
+            
+            stem_paths[name] = {
+                "path": stem_path,
+                "active": is_active
+            }
+            
+            status = "✓ Active" if is_active else "○ Silent/Minimal"
+            print(f"  {status}: {name}.wav")
         
         return stem_paths
+    
+    def _check_stem_activity(self, stem_tensor):
+        """
+        Check if a stem has meaningful audio content
+        
+        Args:
+            stem_tensor: Audio tensor [channels, samples]
+            
+        Returns:
+            bool: True if stem is active, False if mostly silent
+        """
+        # Calculate RMS energy
+        rms = torch.sqrt(torch.mean(stem_tensor ** 2))
+        
+        # Threshold: if RMS > 0.01, consider it active
+        # (This is a reasonable threshold for music)
+        threshold = 0.01
+        
+        return rms.item() > threshold
     
     def transcribe_lyrics(self, vocals_path):
         """
