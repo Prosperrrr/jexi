@@ -17,7 +17,7 @@ class MusicProcessor:
     """
     
     def __init__(self):
-        print("Loading Demucs model ...")
+        print("Loading Demucs model (this may take a minute)...")
         self.demucs_model = get_model('htdemucs_6s')  # 6 stems model
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.demucs_model.to(self.device)
@@ -121,6 +121,12 @@ class MusicProcessor:
         # Load audio
         wav, sr = torchaudio.load(audio_path)
         
+        # FIX: Convert mono to stereo if needed
+        if wav.shape[0] == 1:
+            # Duplicate mono channel to create stereo
+            wav = wav.repeat(2, 1)
+            print("  ℹ️ Converted mono audio to stereo")
+        
         # Resample if needed (Demucs expects 44.1kHz)
         if sr != self.demucs_model.samplerate:
             wav = torchaudio.functional.resample(wav, sr, self.demucs_model.samplerate)
@@ -129,7 +135,7 @@ class MusicProcessor:
         wav = wav.to(self.device)
         
         # Apply Demucs model
-        print("  Running Demucs separation ...")
+        print("  Running Demucs separation (this takes 3-5 minutes)...")
         with torch.no_grad():
             sources = apply_model(self.demucs_model, wav[None], device=self.device)[0]
         
