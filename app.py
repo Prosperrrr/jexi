@@ -43,12 +43,12 @@ def home():
 def health_check():
     return jsonify({"status": "healthy"}), 200
 
-# Offline Processing Routes
+# ============= UPLOAD & AUTO-CLASSIFY =============
+
 @app.route('/api/upload', methods=['POST'])
 def upload_audio():
     """
-    Upload audio file for offline processing
-    Auto-detects Music vs Speech and routes to correct pipeline
+    Upload audio file - auto-classifies and starts processing
     """
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -67,37 +67,120 @@ def upload_audio():
         try:
             content_type = classifier.classify(filepath)
             
-            # Check if classification failed
             if content_type is None:
                 return jsonify({
-                    "error": "Failed to classify audio - unsupported format or corrupted file",
-                    "filename": filename,
-                    "suggestion": "Try converting to MP3 or WAV format"
+                    "error": "Failed to classify audio",
+                    "filename": filename
                 }), 500
             
-            return jsonify({
-                "message": "File uploaded and classified successfully",
-                "filename": filename,
-                "content_type": content_type,
-                "status": "ready_for_processing",
-                "next_step": f"/api/process/{content_type}"
-            }), 200
+            # Generate unique job ID
+            job_id = str(uuid.uuid4())[:8]
+            
+            # Start processing based on content type
+            if content_type == "music":
+                # Start music processing in background
+                processing_jobs[job_id] = {"status": "processing", "type": "music"}
+                thread = threading.Thread(
+                    target=process_music_background,
+                    args=(filepath, job_id)
+                )
+                thread.daemon = True
+                thread.start()
+                
+                return jsonify({
+                    "job_id": job_id,
+                    "filename": filename,
+                    "content_type": "music",
+                    "status": "processing",
+                    "message": "Music processing started",
+                    "check_status_url": f"/api/process/music/{job_id}/status",
+                    "estimated_time": "3-5 minutes"
+                }), 200
+                
+            elif content_type == "speech":
+                # TODO: Implement speech processing
+                return jsonify({
+                    "message": "Speech processing not yet implemented",
+                    "filename": filename,
+                    "content_type": "speech"
+                }), 200
             
         except Exception as e:
             return jsonify({
-                "error": f"Classification failed: {str(e)}",
+                "error": f"Processing failed: {str(e)}",
                 "filename": filename
             }), 500
     
     return jsonify({"error": "Invalid file type"}), 400
 
+def process_music_background(filepath, job_id):
+    """Background function to process music"""
+    try:
+        music_processor.process(filepath, job_id)
+        processing_jobs[job_id] = {"status": "completed", "type": "music"}
+    except Exception as e:
+        processing_jobs[job_id] = {"status": "failed", "type": "music", "error": str(e)}
+
+# ============= MUSIC PROCESSING ENDPOINTS =============
+
+@app.route('/api/process/music/<job_id>/status', methods=['GET'])
+def get_music_status(job_id):
+    """Check status of music processing job"""
+    status_info = music_processor.get_status(job_id)
+    return jsonify(status_info), 200
+
+@app.route('/api/process/music/<job_id>', methods=['GET'])
+def get_music_results(job_id):
+    """Get results of completed music processing"""
+    metadata = music_processor.get_metadata(job_id)
+    
+    if not metadata:
+        return jsonify({"error": "Job not found"}), 404
+    
+    if metadata['status'] != 'completed':
+        return jsonify({
+            "error": "Job not completed yet",
+            "status": metadata['status']
+        }), 400
+    
+    # Build download URLs for stems
+    stems_urls = {}
+    for stem_name in ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']:
+        stems_urls[stem_name] = f"/api/download/{job_id}/{stem_name}.wav"
+    
+    return jsonify({
+        "job_id": job_id,
+        "status": "completed",
+        "metadata": {
+            "filename": metadata['filename'],
+            "key": metadata['key'],
+            "bpm": metadata['bpm'],
+            "duration": metadata['duration'],
+            "sample_rate": metadata['sample_rate'],
+            "lyrics": metadata['lyrics'],
+            "processed_at": metadata['processed_at']
+        },
+        "stems": stems_urls
+    }), 200
+
+@app.route('/api/download/<job_id>/<stem_file>', methods=['GET'])
+def download_stem(job_id, stem_file):
+    """Download individual stem file"""
+    stem_path = os.path.join('processed', job_id, 'stems', stem_file)
+    
+    if not os.path.exists(stem_path):
+        return jsonify({"error": "File not found"}), 404
+    
+    return send_file(stem_path, as_attachment=True)
+
+# ============= LEGACY/PLACEHOLDER ENDPOINTS =============
+
 @app.route('/api/process/music', methods=['POST'])
 def process_music():
     """
-    Process music file with Demucs for stem separation
+    Legacy endpoint - use /api/upload instead
     """
-    # TODO: Implement Demucs processing
-    return jsonify({"message": "Music processing endpoint - Coming soon"}), 200
+    return jsonify({"message": "Use /api/upload endpoint instead"}), 400
 
 @app.route('/api/process/speech', methods=['POST'])
 def process_speech():
@@ -108,7 +191,8 @@ def process_speech():
     # TODO: Implement Whisper transcription
     return jsonify({"message": "Speech processing endpoint - Coming soon"}), 200
 
-# Real-time Processing Routes
+# ============= REAL-TIME PROCESSING ENDPOINTS =============
+
 @app.route('/api/realtime/noise-reduction', methods=['POST'])
 def realtime_noise_reduction():
     """
