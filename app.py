@@ -126,6 +126,23 @@ def process_music_background(filepath, job_id):
 @app.route('/api/process/music/<job_id>/status', methods=['GET'])
 def get_music_status(job_id):
     """Check status of music processing job"""
+    # First check if job is currently processing (in memory)
+    if job_id in processing_jobs:
+        job_info = processing_jobs[job_id]
+        if job_info['status'] == 'processing':
+            return jsonify({
+                "status": "processing",
+                "job_id": job_id,
+                "message": "Still processing... This may take 3-5 minutes"
+            }), 200
+        elif job_info['status'] == 'failed':
+            return jsonify({
+                "status": "failed",
+                "job_id": job_id,
+                "error": job_info.get('error', 'Unknown error')
+            }), 200
+    
+    # If not in memory, check metadata file (completed jobs)
     status_info = music_processor.get_status(job_id)
     return jsonify(status_info), 200
 
