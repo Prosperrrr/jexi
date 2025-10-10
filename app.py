@@ -160,10 +160,22 @@ def get_music_results(job_id):
             "status": metadata['status']
         }), 400
     
-    # Build download URLs for stems
+    # Build download URLs for stems (only active ones)
     stems_urls = {}
+    active_stems = []
+    
     for stem_name in ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']:
-        stems_urls[stem_name] = f"/api/download/{job_id}/{stem_name}.wav"
+        stem_info = metadata['stems'].get(stem_name, {})
+        is_active = stem_info.get('active', True)  # Default to True for backwards compatibility
+        
+        stem_data = {
+            "url": f"/api/download/{job_id}/{stem_name}.wav",
+            "active": is_active
+        }
+        stems_urls[stem_name] = stem_data
+        
+        if is_active:
+            active_stems.append(stem_name)
     
     return jsonify({
         "job_id": job_id,
