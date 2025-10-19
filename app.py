@@ -79,13 +79,13 @@ def upload_audio():
             # Start processing based on content type
             if content_type == "music":
                 # Start music processing in background
-                processing_jobs[job_id] = {"status": "processing", "type": "music"}
-                thread = threading.Thread(
-                    target=process_music_background,
-                    args=(filepath, job_id)
-                )
-                thread.daemon = True
-                thread.start()
+                # processing_jobs[job_id] = {"status": "processing", "type": "music"}
+                #thread = threading.Thread(
+                 #   target=process_music_background,
+                  #  args=(filepath, job_id)
+                #)
+                #thread.daemon = True
+                #thread.start()
                 
                 return jsonify({
                     "job_id": job_id,
@@ -129,12 +129,25 @@ def get_music_status(job_id):
     # First check if job is currently processing (in memory)
     if job_id in processing_jobs:
         job_info = processing_jobs[job_id]
+        
+        # Get detailed progress if available
+        progress_info = music_processor.get_progress(job_id)
+        
         if job_info['status'] == 'processing':
-            return jsonify({
+            response = {
                 "status": "processing",
                 "job_id": job_id,
-                "message": "Still processing... This may take 3-5 minutes"
-            }), 200
+                "message": "Processing audio..."
+            }
+            
+            # Add progress details if available
+            if progress_info:
+                response["progress"] = progress_info["percent"]
+                response["current_step"] = progress_info["message"]
+                response["updated_at"] = progress_info["updated_at"]
+            
+            return jsonify(response), 200
+            
         elif job_info['status'] == 'failed':
             return jsonify({
                 "status": "failed",
@@ -189,7 +202,8 @@ def get_music_results(job_id):
             "lyrics": metadata['lyrics'],
             "processed_at": metadata['processed_at']
         },
-        "stems": stems_urls
+        "stems": stems_urls,
+        "active_stems": active_stems  # List of stems that have content
     }), 200
 
 @app.route('/api/download/<job_id>/<stem_file>', methods=['GET'])

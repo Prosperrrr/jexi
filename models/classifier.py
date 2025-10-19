@@ -3,14 +3,12 @@ import numpy as np
 from pydub import AudioSegment
 import os
 import tempfile
-from collections import Counter
 import time
 
 class AudioClassifier:
     """
-    This model classifies audio content as either 'music' or 'speech'
-    Uses spectral features and rhythm analysis from three points in the audio.
-    uses librosa python library
+    Classifies audio content as either 'music' or 'speech'
+    Uses spectral features and rhythm analysis
     """
     
     def __init__(self):
@@ -18,7 +16,7 @@ class AudioClassifier:
     
     def classify(self, audio_path):
         """
-        Classify audio file as 'music' or 'speech' using a three-point check.
+        Classify audio file as 'music' or 'speech' using three-point sampling
         
         Args:
             audio_path (str): Path to audio file
@@ -42,28 +40,31 @@ class AudioClassifier:
             # Get total duration
             duration = librosa.get_duration(path=audio_path_to_load)
             
-            # Define clip length and points to check
-            clip_length = 30 
+            # Determine sampling points
+            clip_length = 30
             if duration < clip_length:
-                # If file is shorter than 30s, analyze the whole thing
+                # Short audio - analyze whole thing
                 points_to_check = [0]
+            elif duration < 90:
+                # Medium audio - check beginning and middle
+                points_to_check = [0, duration / 2 - (clip_length / 2)]
             else:
-                # Check beginning, middle, and end
+                # Long audio - check beginning, middle, end (3-point)
                 points_to_check = [
                     0,  # Beginning
                     duration / 2 - (clip_length / 2),  # Middle
-                    duration - clip_length  # End
+                    max(0, duration - clip_length)  # End
                 ]
-
+            
             decisions = []
             print("\n=== AUDIO CLASSIFICATION DEBUG ===")
             print(f"File: {audio_path}")
             print(f"Duration: {duration:.1f}s")
-            print(f"Checking audio at {len(points_to_check)} point(s)...\n")
-
+            print(f"Checking {len(points_to_check)} point(s)...\n")
+            
             # Analyze each point
             for i, start_time in enumerate(points_to_check):
-                print(f"--- Sample {i+1} (starts at {int(start_time)}s) ---")
+                print(f"--- Sample {i+1} (at {int(start_time)}s) ---")
                 
                 # Load clip
                 y, sr = librosa.load(audio_path_to_load, sr=self.sample_rate, 
@@ -72,36 +73,32 @@ class AudioClassifier:
                 # Extract features
                 features = self._extract_features(y, sr)
                 
-                # Debug: Show key features
+                # Show key features
                 print(f"  beat_strength: {features['beat_strength']:.3f}")
                 print(f"  tempo: {features['tempo']:.1f}")
                 print(f"  zcr_mean: {features['zcr_mean']:.3f}")
-                print(f"  spectral_rolloff_mean: {features['spectral_rolloff_mean']:.1f}")
                 
                 # Make decision
                 decision = self._make_decision(features)
                 decisions.append(decision)
-                print(f"  → Decision: {decision}\n")
-
-            # Tally votes
-            vote_count = Counter(decisions)
-            final_decision = vote_count.most_common(1)[0][0]
-            
-            print(f"Final Votes: {dict(vote_count)}")
-            print(f" Final Classification: {final_decision.upper()}")
-            print("===================================\n")
+                print(f"  → {decision}\n")
             
             # Cleanup temp file
             if cleanup_temp:
                 try:
                     os.unlink(temp_wav.name)
-                except PermissionError:
-                    time.sleep(0.1)
-                    try:
-                        os.unlink(temp_wav.name)
-                    except:
-                        pass  # OS will clean this later
-                
+                except:
+                    pass
+            
+            # Vote on final classification
+            from collections import Counter
+            vote_count = Counter(decisions)
+            final_decision = vote_count.most_common(1)[0][0]
+            
+            print(f"Votes: {dict(vote_count)}")
+            print(f"🎯 Final Classification: {final_decision.upper()}")
+            print("===================================\n")
+            
             return final_decision
             
         except Exception as e:
@@ -144,7 +141,7 @@ class AudioClassifier:
     
     def _make_decision(self, features):
         """
-        Decision logic based on extracted features
+        Decision logic based on extracted features (IMPROVED THRESHOLDS)
         
         Music typically has:
         - Very strong, regular beat patterns
@@ -165,24 +162,26 @@ class AudioClassifier:
         if features['zcr_mean'] > 0.15:
             speech_score += 3
         elif features['zcr_mean'] < 0.08:
-            music_score += 2
+            music_score += 3  # Increased from 2
         
-        # Beat strength - Music has strong, regular beats
-        if features['beat_strength'] > 1.5:
-            music_score += 3
-        elif features['beat_strength'] < 0.8:
-            speech_score += 2
+        # Beat strength - STRICTER for music (main improvement!)
+        if features['beat_strength'] > 2.0:  # Raised from 1.5
+            music_score += 4  # Increased weight
+        elif features['beat_strength'] < 0.6:  # Stricter threshold
+            speech_score += 3
+        elif features['beat_strength'] < 1.0:  # Middle ground
+            speech_score += 1
         
         # Spectral Rolloff - Music uses fuller frequency spectrum
-        if features['spectral_rolloff_mean'] > 5000:
+        if features['spectral_rolloff_mean'] > 6000:  # Raised from 5000
             music_score += 2
-        elif features['spectral_rolloff_mean'] < 3500:
+        elif features['spectral_rolloff_mean'] < 3000:  # Stricter
             speech_score += 2
         
         # Spectral Centroid - Speech typically has lower centroid
-        if features['spectral_centroid_mean'] < 2000:
+        if features['spectral_centroid_mean'] < 1800:  # Stricter
             speech_score += 2
-        elif features['spectral_centroid_mean'] > 3000:
+        elif features['spectral_centroid_mean'] > 3500:  # Higher threshold
             music_score += 2
         
         # Spectral Centroid Variance
@@ -193,16 +192,16 @@ class AudioClassifier:
                 music_score += 1
         
         # Spectral Bandwidth
-        if features['spectral_bandwidth_mean'] > 1800:
+        if features['spectral_bandwidth_mean'] > 2000:  # Raised
             music_score += 1
-        elif features['spectral_bandwidth_mean'] < 1400:
+        elif features['spectral_bandwidth_mean'] < 1200:  # Stricter
             speech_score += 1
         
-        # RMS Energy variation
-        if features['rms_std'] < 0.04:
+        # RMS Energy variation - Speech has more pauses
+        if features['rms_std'] < 0.03:  # Stricter
             music_score += 2
-        elif features['rms_std'] > 0.06:
-            speech_score += 1
+        elif features['rms_std'] > 0.07:  # Raised
+            speech_score += 2
         
         # MFCC Std
         if features['mfcc_std'] > 100:
@@ -210,11 +209,13 @@ class AudioClassifier:
         elif features['mfcc_std'] > 40:
             music_score += 1
         
-        # Tempo check
+        # Tempo check - Very extreme tempos unlikely for music
         if features['tempo'] < 60 or features['tempo'] > 200:
             speech_score += 1
+        elif 80 <= features['tempo'] <= 180:  # Typical music range
+            music_score += 1
         
-        print(f"  Music score: {music_score} | Speech score: {speech_score}")
+        print(f"  Music: {music_score} | Speech: {speech_score}")
         
         if music_score > speech_score:
             return "music"
@@ -229,5 +230,5 @@ class AudioClassifier:
             tuple: (classification, confidence_percentage)
         """
         classification = self.classify(audio_path)
-        # TODO: Implement proper confidence scoring based on vote margins
+        # TODO: Implement proper confidence scoring based on score margins
         return classification, 75.0

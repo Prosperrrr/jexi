@@ -29,6 +29,9 @@ class MusicProcessor:
         self.processed_dir = "processed"
         os.makedirs(self.processed_dir, exist_ok=True)
         
+        # Progress tracking
+        self.current_progress = {}  # Store progress for each job_id
+        
     def process(self, audio_path, job_id):
         """
         Main processing function - separates stems, transcribes, analyzes
@@ -46,24 +49,34 @@ class MusicProcessor:
             print(f"File: {audio_path}")
             print(f"{'='*50}\n")
             
+            # Initialize progress
+            self._update_progress(job_id, 0, "Starting processing...")
+            
             # Create job directory
             job_dir = os.path.join(self.processed_dir, job_id)
             stems_dir = os.path.join(job_dir, "stems")
             os.makedirs(stems_dir, exist_ok=True)
             
-            # Step 1: Separate stems (longest step)
+            # Step 1: Separate stems (longest step - 70% of time)
             print("Step 1/3: Separating stems with Demucs...")
-            stem_paths = self.separate_stems(audio_path, stems_dir)
+            self._update_progress(job_id, 10, "Separating audio stems...")
+            stem_paths = self.separate_stems(audio_path, stems_dir, job_id)
+            self._update_progress(job_id, 70, "Stems separated successfully!")
             print("✅ Stems separated successfully!")
             
-            # Step 2: Transcribe lyrics from vocals
+            # Step 2: Transcribe lyrics from vocals (20% of time)
             print("\nStep 2/3: Transcribing lyrics with Whisper...")
-            lyrics = self.transcribe_lyrics(stem_paths['vocals'])
+            self._update_progress(job_id, 75, "Transcribing lyrics...")
+            vocals_path = stem_paths['vocals']['path'] if isinstance(stem_paths['vocals'], dict) else stem_paths['vocals']
+            lyrics = self.transcribe_lyrics(vocals_path)
+            self._update_progress(job_id, 90, "Lyrics transcribed!")
             print("✅ Lyrics transcribed!")
             
-            # Step 3: Analyze audio
+            # Step 3: Analyze audio (10% of time)
             print("\nStep 3/3: Analyzing audio...")
+            self._update_progress(job_id, 95, "Analyzing audio properties...")
             analysis = self.analyze_audio(audio_path)
+            self._update_progress(job_id, 100, "Processing complete!")
             print("✅ Analysis complete!")
             
             # Compile metadata
@@ -89,6 +102,9 @@ class MusicProcessor:
             # Save metadata
             self.save_metadata(job_id, metadata)
             
+            # Clear progress tracking
+            self._clear_progress(job_id)
+            
             print(f"\n{'='*50}")
             print(f"✅ JOB COMPLETED: {job_id}")
             print(f"{'='*50}\n")
@@ -99,6 +115,9 @@ class MusicProcessor:
             print(f"❌ Error processing job {job_id}: {e}")
             import traceback
             traceback.print_exc()
+            
+            # Update progress with error
+            self._update_progress(job_id, -1, f"Error: {str(e)}")
             
             # Save error metadata
             error_metadata = {
@@ -111,7 +130,24 @@ class MusicProcessor:
             
             return error_metadata
     
-    def separate_stems(self, audio_path, output_dir):
+    def _update_progress(self, job_id, percent, message):
+        """Update processing progress for a job"""
+        self.current_progress[job_id] = {
+            "percent": percent,
+            "message": message,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    
+    def _clear_progress(self, job_id):
+        """Clear progress tracking after job completes"""
+        if job_id in self.current_progress:
+            del self.current_progress[job_id]
+    
+    def get_progress(self, job_id):
+        """Get current progress for a job"""
+        return self.current_progress.get(job_id, None)
+    
+    def separate_stems(self, audio_path, output_dir, job_id=None):
         """
         Separate audio into 6 stems using Demucs
         
@@ -136,8 +172,14 @@ class MusicProcessor:
         
         # Apply Demucs model
         print("  Running Demucs separation (this takes 3-5 minutes)...")
+        if job_id:
+            self._update_progress(job_id, 20, "Processing audio with Demucs AI...")
+        
         with torch.no_grad():
             sources = apply_model(self.demucs_model, wav[None], device=self.device)[0]
+        
+        if job_id:
+            self._update_progress(job_id, 60, "Saving separated stems...")
         
         # Save each stem and check if it's active
         stem_names = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano']
@@ -190,22 +232,19 @@ class MusicProcessor:
         """
         try:
             # Get full transcription with word-level timestamps
-            result = self.whisper_model.transcribe(
-                vocals_path,
-                word_timestamps=True  # Enable word-level timestamps
-            )
+            result = self.whisper_model.transcribe(vocals_path)
+            
+            # Extract plain text
+            plain_lyrics = result.get('text', '').strip()
             
             # Extract segments with timestamps
             lyrics_with_time = []
             for segment in result.get('segments', []):
                 lyrics_with_time.append({
-                    "start": segment['start'],  # Start time in seconds
-                    "end": segment['end'],      # End time in seconds
+                    "start": round(segment['start'], 2),  # Start time in seconds
+                    "end": round(segment['end'], 2),      # End time in seconds
                     "text": segment['text'].strip()
                 })
-            
-            # Also keep plain text version
-            plain_lyrics = result['text'].strip()
             
             if not plain_lyrics:
                 return {
@@ -220,6 +259,8 @@ class MusicProcessor:
             
         except Exception as e:
             print(f"  Warning: Could not transcribe lyrics: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 "plain": "Transcription failed",
                 "timestamped": []
@@ -311,3 +352,20 @@ class MusicProcessor:
                 "job_id": job_id,
                 "message": "Still processing..."
             }
+    
+    def _update_progress(self, job_id, percent, message):
+        """Update processing progress for a job"""
+        self.current_progress[job_id] = {
+            "percent": percent,
+            "message": message,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    
+    def _clear_progress(self, job_id):
+        """Clear progress tracking after job completes"""
+        if job_id in self.current_progress:
+            del self.current_progress[job_id]
+    
+    def get_progress(self, job_id):
+        """Get current progress for a job"""
+        return self.current_progress.get(job_id, None)
