@@ -17,14 +17,16 @@ import uuid
 from models.classifier import AudioClassifier
 from models.yamnet_classifier import YAMNetClassifier
 from models.music_processor import MusicProcessor
+from models.speech_processor import SpeechProcessor
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
 # Initialize models
-# classifier = AudioClassifier()  # Old classifier (backup)
-yamnet_classifier = YAMNetClassifier()  # NEW: YAMNet classifier
+# classifier = AudioClassifier()  # Old classifier (this is included for documentation/backup)
+yamnet_classifier = YAMNetClassifier()  
 music_processor = MusicProcessor()
+speech_processor = SpeechProcessor()  
 
 # Configuration
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -81,7 +83,7 @@ def upload_audio():
         file_id = str(uuid.uuid4())[:8]
         
         try:
-            # Classify with YAMNet (takes ~5 seconds), depending on system requirements
+            # Classify with YAMNet (takes ~5 seconds)
             result = yamnet_classifier.classify(filepath)
             
             if result is None:
@@ -121,7 +123,7 @@ def upload_audio():
 @app.route('/api/process/<file_id>', methods=['POST'])
 def confirm_and_process(file_id):
     """
-    STAGE 2: User confirms content type (music or speech?) and starts processing
+    STAGE 2: User confirms content type and starts processing
     """
     if file_id not in uploaded_files:
         return jsonify({"error": "File ID not found"}), 404
@@ -145,6 +147,7 @@ def confirm_and_process(file_id):
             target=process_music_background,
             args=(file_info['filepath'], job_id)
         )
+        #uses threading instead of background processing like celery,e.t.c
         thread.daemon = True
         thread.start()
         
@@ -160,11 +163,23 @@ def confirm_and_process(file_id):
         }), 200
         
     elif content_type == "speech":
-        # TODO: Implement speech processing
+        processing_jobs[job_id] = {"status": "processing", "type": "speech"}
+        thread = threading.Thread(
+            target=process_speech_background,
+            args=(file_info['filepath'], job_id)
+        )
+        thread.daemon = True
+        thread.start()
+        
         return jsonify({
-            "message": "Speech processing not yet implemented",
             "job_id": job_id,
-            "content_type": "speech"
+            "file_id": file_id,
+            "filename": file_info['filename'],
+            "content_type": "speech",
+            "status": "processing",
+            "message": "Speech processing started",
+            "check_status_url": f"/api/process/speech/{job_id}/status",
+            "estimated_time": "2-3 minutes"
         }), 200
 
 def process_music_background(filepath, job_id):
@@ -174,6 +189,14 @@ def process_music_background(filepath, job_id):
         processing_jobs[job_id] = {"status": "completed", "type": "music"}
     except Exception as e:
         processing_jobs[job_id] = {"status": "failed", "type": "music", "error": str(e)}
+
+def process_speech_background(filepath, job_id):
+    """Background function to process speech"""
+    try:
+        speech_processor.process(filepath, job_id)
+        processing_jobs[job_id] = {"status": "completed", "type": "speech"}
+    except Exception as e:
+        processing_jobs[job_id] = {"status": "failed", "type": "speech", "error": str(e)}
 
 # ============= MUSIC PROCESSING ENDPOINTS =============
 
@@ -270,6 +293,111 @@ def download_stem(job_id, stem_file):
     
     return send_file(stem_path, as_attachment=True)
 
+# ============= SPEECH PROCESSING ENDPOINTS =============
+
+@app.route('/api/process/speech/<job_id>/status', methods=['GET'])
+def get_speech_status(job_id):
+    """Check status of speech processing job"""
+    # First check if job is currently processing (in memory)
+    if job_id in processing_jobs:
+        job_info = processing_jobs[job_id]
+        
+        # Get detailed progress if available
+        progress_info = speech_processor.get_progress(job_id)
+        
+        if job_info['status'] == 'processing':
+            response = {
+                "status": "processing",
+                "job_id": job_id,
+                "message": "Processing speech..."
+            }
+            
+            # Add progress details if available
+            if progress_info:
+                response["progress"] = progress_info["percent"]
+                response["current_step"] = progress_info["message"]
+                response["updated_at"] = progress_info["updated_at"]
+            
+            return jsonify(response), 200
+            
+        elif job_info['status'] == 'failed':
+            return jsonify({
+                "status": "failed",
+                "job_id": job_id,
+                "error": job_info.get('error', 'Unknown error')
+            }), 200
+    
+    # If not in memory, check metadata file (completed jobs)
+    status_info = speech_processor.get_status(job_id)
+    return jsonify(status_info), 200
+
+@app.route('/api/process/speech/<job_id>', methods=['GET'])
+def get_speech_results(job_id):
+    """Get results of completed speech processing"""
+    metadata = speech_processor.get_metadata(job_id)
+    
+    if not metadata:
+        return jsonify({"error": "Job not found"}), 404
+    
+    if metadata['status'] != 'completed':
+        return jsonify({
+            "error": "Job not completed yet",
+            "status": metadata['status']
+        }), 400
+    
+    return jsonify({
+        "job_id": job_id,
+        "status": "completed",
+        "metadata": {
+            "filename": metadata['filename'],
+            "duration": metadata['duration'],
+            "sample_rate": metadata['sample_rate'],
+            "transcript": metadata['transcript'],
+            "processed_at": metadata['processed_at']
+        },
+        "downloads": {
+            "clean_audio": f"/api/download/speech/{job_id}/clean_audio.wav",
+            "transcript_txt": f"/api/download/transcript/{job_id}/txt",
+            "transcript_json": f"/api/download/transcript/{job_id}/json",
+            "transcript_srt": f"/api/download/transcript/{job_id}/srt"
+        }
+    }), 200
+
+@app.route('/api/download/speech/<job_id>/<filename>', methods=['GET'])
+def download_speech_audio(job_id, filename):
+    """Download processed speech audio"""
+    file_path = os.path.join('processed', job_id, filename)
+    
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+    
+    return send_file(file_path, as_attachment=True)
+
+@app.route('/api/download/transcript/<job_id>/<format>', methods=['GET'])
+def download_transcript(job_id, format):
+    """
+    Download transcript in specified format
+    Formats: txt, json, srt
+    """
+    if format not in ['txt', 'json', 'srt']:
+        return jsonify({"error": "Invalid format. Use: txt, json, or srt"}), 400
+    
+    try:
+        if format == 'txt':
+            file_path = speech_processor.export_transcript_txt(job_id)
+        elif format == 'json':
+            file_path = speech_processor.export_transcript_json(job_id)
+        elif format == 'srt':
+            file_path = speech_processor.export_transcript_srt(job_id)
+        
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({"error": "Transcript not found"}), 404
+        
+        return send_file(file_path, as_attachment=True)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ============= LEGACY/PLACEHOLDER ENDPOINTS =============
 
 @app.route('/api/process/music', methods=['POST'])
@@ -282,11 +410,9 @@ def process_music():
 @app.route('/api/process/speech', methods=['POST'])
 def process_speech():
     """
-    Process speech file with noisereduce + Whisper
+    Legacy endpoint - use /api/upload + /api/process/{file_id} instead
     """
-    # TODO: Implement noisereduce noise reduction
-    # TODO: Implement Whisper transcription
-    return jsonify({"message": "Speech processing endpoint - Coming soon"}), 200
+    return jsonify({"message": "Use /api/upload endpoint"}), 400
 
 # ============= REAL-TIME PROCESSING ENDPOINTS =============
 
