@@ -14,7 +14,7 @@ class YAMNetClassifier:
     """
     
     def __init__(self):
-        print("Loading YAMNet model (this may take a minute)...")
+        print("Loading YAMNet model")
         # Load YAMNet model from TensorFlow Hub
         self.model = hub.load('https://tfhub.dev/google/yamnet/1')
         
@@ -46,7 +46,7 @@ class YAMNetClassifier:
             'Sermon', 'Podcast', 'Audiobook'
         }
         
-        print("✅ YAMNet model loaded successfully!")
+        print("YAMNet model loaded successfully!")
     
     def _load_class_names(self):
         """Load YAMNet class names"""

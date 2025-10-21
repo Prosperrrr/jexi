@@ -1,7 +1,17 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('tensorflow_hub').setLevel(logging.ERROR)
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-import os
 import threading
 import uuid
 from models.classifier import AudioClassifier
@@ -71,7 +81,7 @@ def upload_audio():
         file_id = str(uuid.uuid4())[:8]
         
         try:
-            # Classify with YAMNet (takes ~5 seconds)
+            # Classify with YAMNet (takes ~5 seconds), depending on system requirements
             result = yamnet_classifier.classify(filepath)
             
             if result is None:
@@ -111,7 +121,7 @@ def upload_audio():
 @app.route('/api/process/<file_id>', methods=['POST'])
 def confirm_and_process(file_id):
     """
-    STAGE 2: User confirms content type and starts processing
+    STAGE 2: User confirms content type (music or speech?) and starts processing
     """
     if file_id not in uploaded_files:
         return jsonify({"error": "File ID not found"}), 404
@@ -298,4 +308,4 @@ def realtime_transcription():
     return jsonify({"message": "Real-time transcription - Coming soon"}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
