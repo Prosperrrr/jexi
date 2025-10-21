@@ -5,13 +5,15 @@ import os
 import threading
 import uuid
 from models.classifier import AudioClassifier
+from models.yamnet_classifier import YAMNetClassifier
 from models.music_processor import MusicProcessor
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
 # Initialize models
-classifier = AudioClassifier()
+# classifier = AudioClassifier()  # Old classifier (backup)
+yamnet_classifier = YAMNetClassifier()  # NEW: YAMNet classifier
 music_processor = MusicProcessor()
 
 # Configuration
@@ -23,8 +25,9 @@ ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a'}
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('processed', exist_ok=True)
 
-# Store for tracking background jobs
+# Store for tracking background jobs and file metadata
 processing_jobs = {}
+uploaded_files = {}  # NEW: Store file info before processing
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -48,7 +51,8 @@ def health_check():
 @app.route('/api/upload', methods=['POST'])
 def upload_audio():
     """
-    Upload audio file - auto-classifies and starts processing
+    STAGE 1: Upload file and classify with YAMNet
+    Returns classification for user confirmation
     """
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -63,55 +67,95 @@ def upload_audio():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        # Classify audio content
+        # Generate unique file ID
+        file_id = str(uuid.uuid4())[:8]
+        
         try:
-            content_type = classifier.classify(filepath)
+            # Classify with YAMNet (takes ~5 seconds)
+            result = yamnet_classifier.classify(filepath)
             
-            if content_type is None:
+            if result is None:
                 return jsonify({
                     "error": "Failed to classify audio",
-                    "filename": filename
+                    "filename": filename,
+                    "suggestion": "Please specify if this is music or speech"
                 }), 500
             
-            # Generate unique job ID
-            job_id = str(uuid.uuid4())[:8]
+            # Store file info for later processing
+            uploaded_files[file_id] = {
+                "filename": filename,
+                "filepath": filepath,
+                "detected_type": result['classification'],
+                "confidence": result['confidence'],
+                "top_predictions": result['top_predictions']
+            }
             
-            # Start processing based on content type
-            if content_type == "music":
-                # Start music processing in background
-                # processing_jobs[job_id] = {"status": "processing", "type": "music"}
-                #thread = threading.Thread(
-                 #   target=process_music_background,
-                  #  args=(filepath, job_id)
-                #)
-                #thread.daemon = True
-                #thread.start()
-                
-                return jsonify({
-                    "job_id": job_id,
-                    "filename": filename,
-                    "content_type": "music",
-                    "status": "processing",
-                    "message": "Music processing started",
-                    "check_status_url": f"/api/process/music/{job_id}/status",
-                    "estimated_time": "3-5 minutes"
-                }), 200
-                
-            elif content_type == "speech":
-                # TODO: Implement speech processing
-                return jsonify({
-                    "message": "Speech processing not yet implemented",
-                    "filename": filename,
-                    "content_type": "speech"
-                }), 200
+            return jsonify({
+                "file_id": file_id,
+                "filename": filename,
+                "detected_type": result['classification'],
+                "confidence": result['confidence'],
+                "top_predictions": result['top_predictions'],
+                "status": "awaiting_confirmation",
+                "message": f"AI detected this as {result['classification'].upper()} with {result['confidence']:.0f}% confidence"
+            }), 200
             
         except Exception as e:
             return jsonify({
-                "error": f"Processing failed: {str(e)}",
+                "error": f"Classification failed: {str(e)}",
                 "filename": filename
             }), 500
     
     return jsonify({"error": "Invalid file type"}), 400
+
+@app.route('/api/process/<file_id>', methods=['POST'])
+def confirm_and_process(file_id):
+    """
+    STAGE 2: User confirms content type and starts processing
+    """
+    if file_id not in uploaded_files:
+        return jsonify({"error": "File ID not found"}), 404
+    
+    file_info = uploaded_files[file_id]
+    
+    # Get user's confirmed content type (or use detected)
+    data = request.get_json() or {}
+    content_type = data.get('content_type', file_info['detected_type'])
+    
+    if content_type not in ['music', 'speech']:
+        return jsonify({"error": "Invalid content type"}), 400
+    
+    # Generate processing job ID
+    job_id = str(uuid.uuid4())[:8]
+    
+    # Start processing
+    if content_type == "music":
+        processing_jobs[job_id] = {"status": "processing", "type": "music"}
+        thread = threading.Thread(
+            target=process_music_background,
+            args=(file_info['filepath'], job_id)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            "job_id": job_id,
+            "file_id": file_id,
+            "filename": file_info['filename'],
+            "content_type": "music",
+            "status": "processing",
+            "message": "Music processing started",
+            "check_status_url": f"/api/process/music/{job_id}/status",
+            "estimated_time": "3-5 minutes"
+        }), 200
+        
+    elif content_type == "speech":
+        # TODO: Implement speech processing
+        return jsonify({
+            "message": "Speech processing not yet implemented",
+            "job_id": job_id,
+            "content_type": "speech"
+        }), 200
 
 def process_music_background(filepath, job_id):
     """Background function to process music"""
