@@ -12,21 +12,31 @@ logging.getLogger('tensorflow_hub').setLevel(logging.ERROR)
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+import os
 import threading
 import uuid
 from models.classifier import AudioClassifier
 from models.yamnet_classifier import YAMNetClassifier
 from models.music_processor import MusicProcessor
 from models.speech_processor import SpeechProcessor
+from utils.file_cleanup import FileCleanup
+from utils.rate_limiter import RateLimiter
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
 # Initialize models
-# classifier = AudioClassifier()  # Old classifier (this is included for documentation/backup)
-yamnet_classifier = YAMNetClassifier()  
+# classifier = AudioClassifier()  # Old classifier (backup)
+yamnet_classifier = YAMNetClassifier()  # NEW: YAMNet classifier
 music_processor = MusicProcessor()
-speech_processor = SpeechProcessor()  
+speech_processor = SpeechProcessor()  # NEW: Speech processor
+
+# Initialize file cleanup (deletes files older than 24 hours)
+file_cleanup = FileCleanup(processed_dir='processed', uploads_dir='uploads', max_age_hours=24)
+file_cleanup.start_cleanup_scheduler()  # Start automatic cleanup
+
+# Initialize rate limiter (max 5 uploads per minute)
+rate_limiter = RateLimiter(max_requests=5, time_window=60)
 
 # Configuration
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -66,6 +76,17 @@ def upload_audio():
     STAGE 1: Upload file and classify with YAMNet
     Returns classification for user confirmation
     """
+    # Rate limiting check
+    client_ip = request.remote_addr
+    allowed, remaining, reset_time = rate_limiter.is_allowed(client_ip)
+    
+    if not allowed:
+        return jsonify({
+            "error": "Rate limit exceeded",
+            "message": f"Too many uploads. Please wait {reset_time} seconds.",
+            "retry_after": reset_time
+        }), 429  # HTTP 429 Too Many Requests
+    
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
     
@@ -147,7 +168,6 @@ def confirm_and_process(file_id):
             target=process_music_background,
             args=(file_info['filepath'], job_id)
         )
-        #uses threading instead of background processing like celery,e.t.c
         thread.daemon = True
         thread.start()
         
@@ -412,9 +432,41 @@ def process_speech():
     """
     Legacy endpoint - use /api/upload + /api/process/{file_id} instead
     """
-    return jsonify({"message": "Use /api/upload endpoint"}), 400
+    return jsonify({"message": "Use /api/upload endpoint instead"}), 400
 
-# ============= REAL-TIME PROCESSING ENDPOINTS =============
+# ============= UTILITY ENDPOINTS =============
+
+@app.route('/api/storage/stats', methods=['GET'])
+def get_storage_stats():
+    """Get storage usage statistics"""
+    stats = file_cleanup.get_storage_stats()
+    return jsonify(stats), 200
+
+@app.route('/api/cleanup/now', methods=['POST'])
+def cleanup_now():
+    """Manually trigger cleanup (admin only - add auth later)"""
+    try:
+        file_cleanup.cleanup_old_files()
+        return jsonify({"message": "Cleanup completed"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/cleanup/job/<job_id>', methods=['DELETE'])
+def cleanup_specific_job(job_id):
+    """Delete a specific job's files"""
+    success = file_cleanup.cleanup_specific_job(job_id)
+    if success:
+        return jsonify({"message": f"Job {job_id} deleted"}), 200
+    else:
+        return jsonify({"error": "Could not delete job"}), 500
+
+@app.route('/api/rate-limit/stats', methods=['GET'])
+def get_rate_limit_stats():
+    """Get rate limiter statistics"""
+    stats = rate_limiter.get_stats()
+    return jsonify(stats), 200
+
+# ============= REAL-TIME ENDPOINTS (Coming next!) =============
 
 @app.route('/api/realtime/noise-reduction', methods=['POST'])
 def realtime_noise_reduction():
