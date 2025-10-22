@@ -9,10 +9,11 @@ import logging
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
 logging.getLogger('tensorflow_hub').setLevel(logging.ERROR)
 
+from dotenv import load_dotenv
+load_dotenv()
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-import os
 import threading
 import uuid
 from models.classifier import AudioClassifier
@@ -26,10 +27,10 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
 # Initialize models
-# classifier = AudioClassifier()  # Old classifier (backup)
-yamnet_classifier = YAMNetClassifier()  # NEW: YAMNet classifier
+# classifier = AudioClassifier()  # Old classifier this is kept for documentation/backup
+yamnet_classifier = YAMNetClassifier()  #Google YAMNet classifier
 music_processor = MusicProcessor()
-speech_processor = SpeechProcessor()  # NEW: Speech processor
+speech_processor = SpeechProcessor()  
 
 # Initialize file cleanup (deletes files older than 24 hours)
 file_cleanup = FileCleanup(processed_dir='processed', uploads_dir='uploads', max_age_hours=24)
