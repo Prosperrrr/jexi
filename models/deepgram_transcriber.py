@@ -17,9 +17,9 @@ class DeepgramTranscriber:
         else:
             try:
                 self.client = DeepgramClient(self.api_key)
-                print("✅ Deepgram transcriber initialized!")
+                print(" Deepgram transcriber initialized!")
             except Exception as e:
-                print(f"❌ Failed to initialize Deepgram: {e}")
+                print(f" Failed to initialize Deepgram: {e}")
                 self.client = None
     
     def create_live_transcription(self, on_transcript, on_error=None):
@@ -34,7 +34,7 @@ class DeepgramTranscriber:
             LiveTranscription connection object
         """
         if not self.client:
-            print("❌ Deepgram client not initialized")
+            print(" Deepgram client not initialized")
             return None
         
         try:
@@ -71,14 +71,14 @@ class DeepgramTranscriber:
             
             # Start connection
             if connection.start(options):
-                print("✅ Deepgram live transcription started")
+                print(" Deepgram live transcription started")
                 return connection
             else:
-                print("❌ Failed to start Deepgram connection")
+                print(" Failed to start Deepgram connection")
                 return None
                 
         except Exception as e:
-            print(f"❌ Error creating live transcription: {e}")
+            print(f" Error creating live transcription: {e}")
             import traceback
             traceback.print_exc()
             return None

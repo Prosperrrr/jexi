@@ -115,8 +115,8 @@ class YAMNetClassifier:
             # Determine if music or speech
             result = self._categorize(prediction_scores)
             
-            print(f"\n🎯 Final Classification: {result['classification'].upper()}")
-            print(f"📊 Confidence: {result['confidence']:.2f}%")
+            print(f"\n Final Classification: {result['classification'].upper()}")
+            print(f" Confidence: {result['confidence']:.2f}%")
             print(f"{'='*60}\n")
             
             result['top_predictions'] = top_predictions
@@ -124,7 +124,7 @@ class YAMNetClassifier:
             return result
             
         except Exception as e:
-            print(f"❌ Error classifying audio: {e}")
+            print(f" Error classifying audio: {e}")
             import traceback
             traceback.print_exc()
             return None

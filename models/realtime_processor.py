@@ -19,7 +19,7 @@ class RealtimeProcessor:
         
         self.sample_rate = 16000  # Standard for real-time
         
-        print("✅ Real-time processor ready!")
+        print("Real-time processor ready!")
     
     def process_audio_chunk(self, audio_data):
         """

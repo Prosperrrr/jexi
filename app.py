@@ -11,6 +11,7 @@ logging.getLogger('tensorflow_hub').setLevel(logging.ERROR)
 
 from dotenv import load_dotenv
 load_dotenv()
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -36,7 +37,7 @@ speech_processor = SpeechProcessor()
 file_cleanup = FileCleanup(processed_dir='processed', uploads_dir='uploads', max_age_hours=24)
 file_cleanup.start_cleanup_scheduler()  # Start automatic cleanup
 
-# Initialize rate limiter (max 5 uploads per minute)
+# Initialize rate limiter (limits to max 5 uploads per minute)
 rate_limiter = RateLimiter(max_requests=5, time_window=60)
 
 # Configuration
@@ -50,7 +51,7 @@ os.makedirs('processed', exist_ok=True)
 
 # Store for tracking background jobs and file metadata
 processing_jobs = {}
-uploaded_files = {}  # NEW: Store file info before processing
+uploaded_files = {}  # Store file info before starting processing
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -180,7 +181,7 @@ def confirm_and_process(file_id):
             "status": "processing",
             "message": "Music processing started",
             "check_status_url": f"/api/process/music/{job_id}/status",
-            "estimated_time": "3-5 minutes"
+            "estimated_time": "-"
         }), 200
         
     elif content_type == "speech":
@@ -200,7 +201,7 @@ def confirm_and_process(file_id):
             "status": "processing",
             "message": "Speech processing started",
             "check_status_url": f"/api/process/speech/{job_id}/status",
-            "estimated_time": "2-3 minutes"
+            "estimated_time": "-"
         }), 200
 
 def process_music_background(filepath, job_id):
@@ -219,7 +220,7 @@ def process_speech_background(filepath, job_id):
     except Exception as e:
         processing_jobs[job_id] = {"status": "failed", "type": "speech", "error": str(e)}
 
-# ============= MUSIC PROCESSING ENDPOINTS =============
+# MUSIC PROCESSING route
 
 @app.route('/api/process/music/<job_id>/status', methods=['GET'])
 def get_music_status(job_id):
@@ -314,7 +315,7 @@ def download_stem(job_id, stem_file):
     
     return send_file(stem_path, as_attachment=True)
 
-# ============= SPEECH PROCESSING ENDPOINTS =============
+# SPEECH PROCESSING routes
 
 @app.route('/api/process/speech/<job_id>/status', methods=['GET'])
 def get_speech_status(job_id):
@@ -419,23 +420,27 @@ def download_transcript(job_id, format):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ============= LEGACY/PLACEHOLDER ENDPOINTS =============
+# Routes Not Being Used ===========
 
 @app.route('/api/process/music', methods=['POST'])
 def process_music():
     """
-    Legacy endpoint - use /api/upload instead
+    old endpoint - use /api/upload instead
     """
     return jsonify({"message": "Use /api/upload endpoint instead"}), 400
+
+#left here for documentation
 
 @app.route('/api/process/speech', methods=['POST'])
 def process_speech():
     """
-    Legacy endpoint - use /api/upload + /api/process/{file_id} instead
+    old endpoint - use /api/upload + /api/process/{file_id} instead
     """
     return jsonify({"message": "Use /api/upload endpoint instead"}), 400
 
-# ============= UTILITY ENDPOINTS =============
+#left here for documentation
+
+#Utils Routes 
 
 @app.route('/api/storage/stats', methods=['GET'])
 def get_storage_stats():
@@ -445,7 +450,7 @@ def get_storage_stats():
 
 @app.route('/api/cleanup/now', methods=['POST'])
 def cleanup_now():
-    """Manually trigger cleanup (admin only - add auth later)"""
+    """Manually trigger cleanup (admin only - will add auth later)"""
     try:
         file_cleanup.cleanup_old_files()
         return jsonify({"message": "Cleanup completed"}), 200
@@ -467,7 +472,7 @@ def get_rate_limit_stats():
     stats = rate_limiter.get_stats()
     return jsonify(stats), 200
 
-# ============= REAL-TIME ENDPOINTS (Coming next!) =============
+#  REAL-TIME Routes (Hope it works)
 
 @app.route('/api/realtime/noise-reduction', methods=['POST'])
 def realtime_noise_reduction():

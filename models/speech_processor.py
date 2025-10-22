@@ -28,7 +28,7 @@ class SpeechProcessor:
         # Progress tracking
         self.current_progress = {}
         
-        print("✅ Speech processor initialized!")
+        print("Speech processor initialized!")
     
     def process(self, audio_path, job_id):
         """
@@ -59,27 +59,27 @@ class SpeechProcessor:
             self._update_progress(job_id, 10, "Loading audio file...")
             audio, sr = librosa.load(audio_path, sr=self.sample_rate)
             duration = librosa.get_duration(y=audio, sr=sr)
-            print(f"✅ Audio loaded: {duration:.1f}s at {sr}Hz")
+            print(f" Audio loaded: {duration:.1f}s at {sr}Hz")
             
             # Step 2: Noise reduction
             print("\nStep 2/4: Reducing background noise...")
             self._update_progress(job_id, 25, "Cleaning audio with AI noise reduction...")
             clean_audio = self.reduce_noise(audio, sr)
-            print("✅ Noise reduced!")
+            print("Noise reduced!")
             
             # Step 3: Transcription
             print("\nStep 3/4: Transcribing speech with Whisper...")
             self._update_progress(job_id, 50, "Transcribing speech to text...")
             transcript = self.transcribe_speech(clean_audio, sr)
             self._update_progress(job_id, 85, "Transcription complete!")
-            print("✅ Transcription complete!")
+            print("Transcription complete!")
             
             # Step 4: Save enhanced audio
             print("\nStep 4/4: Saving enhanced audio...")
             self._update_progress(job_id, 90, "Saving processed audio...")
             clean_audio_path = os.path.join(job_dir, "clean_audio.wav")
             self.save_audio(clean_audio, sr, clean_audio_path)
-            print("✅ Audio saved!")
+            print("Audio saved!")
             
             # Compile metadata
             metadata = {
@@ -102,13 +102,13 @@ class SpeechProcessor:
             self._clear_progress(job_id)
             
             print(f"\n{'='*50}")
-            print(f"✅ SPEECH JOB COMPLETED: {job_id}")
+            print(f"SPEECH JOB COMPLETED: {job_id}")
             print(f"{'='*50}\n")
             
             return metadata
             
         except Exception as e:
-            print(f"❌ Error processing speech job {job_id}: {e}")
+            print(f"Error processing speech job {job_id}: {e}")
             import traceback
             traceback.print_exc()
             

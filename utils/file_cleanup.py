@@ -20,19 +20,19 @@ class FileCleanup:
     def start_cleanup_scheduler(self):
         """Start automatic cleanup scheduler"""
         if self.running:
-            print("⚠️ Cleanup scheduler already running")
+            print(" Cleanup scheduler already running")
             return
         
         self.running = True
         self.cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
         self.cleanup_thread.start()
-        print(f"✅ File cleanup scheduler started (runs every {self.cleanup_interval//3600} hour)")
-        print(f"   Files older than {self.max_age_hours} hours will be deleted")
+        print(f"File cleanup scheduler started (runs every {self.cleanup_interval//3600} hour)")
+        print(f"Files older than {self.max_age_hours} hours will be deleted")
     
     def stop_cleanup_scheduler(self):
         """Stop automatic cleanup scheduler"""
         self.running = False
-        print("🛑 File cleanup scheduler stopped")
+        print("File cleanup scheduler stopped")
     
     def _cleanup_loop(self):
         """Background loop that runs cleanup periodically"""
@@ -40,7 +40,7 @@ class FileCleanup:
             try:
                 self.cleanup_old_files()
             except Exception as e:
-                print(f"❌ Cleanup error: {e}")
+                print(f"Cleanup error: {e}")
             
             # Wait for next cleanup cycle
             time.sleep(self.cleanup_interval)
@@ -53,7 +53,7 @@ class FileCleanup:
         deleted_count = 0
         freed_space_mb = 0
         
-        print(f"\n🗑️ Running file cleanup... (removing files older than {self.max_age_hours}h)")
+        print(f"\nRunning file cleanup... (removing files older than {self.max_age_hours}h)")
         
         # Cleanup processed directory
         if os.path.exists(self.processed_dir):
@@ -68,9 +68,9 @@ class FileCleanup:
             freed_space_mb += freed
         
         if deleted_count > 0:
-            print(f"✅ Cleanup complete: Deleted {deleted_count} items, freed {freed_space_mb:.2f} MB")
+            print(f"Cleanup complete: Deleted {deleted_count} items, freed {freed_space_mb:.2f} MB")
         else:
-            print(f"✅ Cleanup complete: No old files to delete")
+            print(f"Cleanup complete: No old files to delete")
     
     def _cleanup_directory(self, directory, current_time, max_age_seconds):
         """Cleanup a specific directory"""
@@ -98,19 +98,19 @@ class FileCleanup:
                         # Delete
                         if os.path.isfile(item_path):
                             os.remove(item_path)
-                            print(f"  🗑️ Deleted file: {item}")
+                            print(f" Deleted file: {item}")
                         else:
                             shutil.rmtree(item_path)
-                            print(f"  🗑️ Deleted folder: {item}")
+                            print(f" Deleted folder: {item}")
                         
                         deleted_count += 1
                 
                 except Exception as e:
-                    print(f"  ⚠️ Could not delete {item}: {e}")
+                    print(f" Could not delete {item}: {e}")
                     continue
         
         except Exception as e:
-            print(f"  ⚠️ Error accessing directory {directory}: {e}")
+            print(f" Error accessing directory {directory}: {e}")
         
         return deleted_count, freed_space_mb
     
@@ -137,13 +137,13 @@ class FileCleanup:
             try:
                 size_mb = self._get_folder_size(job_dir) / (1024 * 1024)
                 shutil.rmtree(job_dir)
-                print(f"✅ Deleted job {job_id} ({size_mb:.2f} MB freed)")
+                print(f"Deleted job {job_id} ({size_mb:.2f} MB freed)")
                 return True
             except Exception as e:
-                print(f"❌ Could not delete job {job_id}: {e}")
+                print(f"Could not delete job {job_id}: {e}")
                 return False
         else:
-            print(f"⚠️ Job {job_id} not found")
+            print(f"Job {job_id} not found")
             return False
     
     def get_storage_stats(self):

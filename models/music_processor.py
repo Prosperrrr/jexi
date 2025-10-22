@@ -62,7 +62,7 @@ class MusicProcessor:
             self._update_progress(job_id, 10, "Separating audio stems...")
             stem_paths = self.separate_stems(audio_path, stems_dir, job_id)
             self._update_progress(job_id, 70, "Stems separated successfully!")
-            print("✅ Stems separated successfully!")
+            print(" Stems separated successfully!")
             
             # Step 2: Transcribe lyrics from vocals (20% of time)
             print("\nStep 2/3: Transcribing lyrics with Whisper...")
@@ -70,14 +70,14 @@ class MusicProcessor:
             vocals_path = stem_paths['vocals']['path'] if isinstance(stem_paths['vocals'], dict) else stem_paths['vocals']
             lyrics = self.transcribe_lyrics(vocals_path)
             self._update_progress(job_id, 90, "Lyrics transcribed!")
-            print("✅ Lyrics transcribed!")
+            print(" Lyrics transcribed!")
             
             # Step 3: Analyze audio (10% of time)
             print("\nStep 3/3: Analyzing audio...")
             self._update_progress(job_id, 95, "Analyzing audio properties...")
             analysis = self.analyze_audio(audio_path)
             self._update_progress(job_id, 100, "Processing complete!")
-            print("✅ Analysis complete!")
+            print("Analysis complete!")
             
             # Compile metadata
             metadata = {
@@ -106,13 +106,13 @@ class MusicProcessor:
             self._clear_progress(job_id)
             
             print(f"\n{'='*50}")
-            print(f"✅ JOB COMPLETED: {job_id}")
+            print(f"JOB COMPLETED: {job_id}")
             print(f"{'='*50}\n")
             
             return metadata
             
         except Exception as e:
-            print(f"❌ Error processing job {job_id}: {e}")
+            print(f" Error processing job {job_id}: {e}")
             import traceback
             traceback.print_exc()
             
@@ -161,7 +161,7 @@ class MusicProcessor:
         if wav.shape[0] == 1:
             # Duplicate mono channel to create stereo
             wav = wav.repeat(2, 1)
-            print("  ℹ️ Converted mono audio to stereo")
+            print("  ℹnfo: Converted mono audio to stereo")
         
         # Resample if needed (Demucs expects 44.1kHz)
         if sr != self.demucs_model.samplerate:

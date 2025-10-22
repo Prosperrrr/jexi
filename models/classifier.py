@@ -96,7 +96,7 @@ class AudioClassifier:
             final_decision = vote_count.most_common(1)[0][0]
             
             print(f"Votes: {dict(vote_count)}")
-            print(f"🎯 Final Classification: {final_decision.upper()}")
+            print(f" Final Classification: {final_decision.upper()}")
             print("===================================\n")
             
             return final_decision
@@ -141,7 +141,7 @@ class AudioClassifier:
     
     def _make_decision(self, features):
         """
-        Decision logic based on extracted features (IMPROVED THRESHOLDS)
+        Decision logic based on extracted features
         
         Music typically has:
         - Very strong, regular beat patterns
