@@ -110,7 +110,7 @@ Jexi automatically detects audio content type (music or speech) and applies the 
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ### System Overview
 
@@ -189,7 +189,7 @@ Audio Upload → YAMNet Classification → User Confirmation
 
 ---
 
-## 📦 Installation
+##  Installation
 
 ### Prerequisites
 - Python 3.11 or higher
@@ -314,7 +314,7 @@ Result: Clean audio without background noise
 
 ---
 
-## 📚 API Documentation
+##  API Documentation
 
 ### Base URL
 ```
@@ -500,7 +500,7 @@ jexi/
 
 ---
 
-## 🚀 Deployment
+##  Deployment
 
 ### Production Considerations
 
