@@ -10,7 +10,7 @@ pydub==0.25.1
 # AI Models
 demucs==4.0.1
 openai-whisper
-noisereduce==3.0.2
+deepfilternet==0.5.6
 
 # Deepgram SDK for real-time transcription
 deepgram-sdk==3.2.0
